@@ -72,9 +72,9 @@ For Windows:
 venv\Scripts\activate
 ```
 For macOS / Linux:
-```
-source venv/bin/activate
 ```bash
+source venv/bin/activate
+```
 
 ### 5. Install the Required Dependencies
 
