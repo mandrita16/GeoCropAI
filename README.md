@@ -1,4 +1,6 @@
-# Precision Agriculture using Machine Learning and IOT
+#  🌱 GeoCropAI — Precision Agriculture using Machine Learning
+
+GeoCropAI is a machine-learning-based web application designed to assist farmers with data-driven agricultural decisions.
 
 ## DATA SOURCE 📊
 - [Crop recommendation dataset ](https://www.kaggle.com/atharvaingle/crop-recommendation-dataset) (custom built dataset)
@@ -19,7 +21,19 @@ Farming is one of the major sectors that influences a country’s economic growt
   -   For the last application, that is the plant disease prediction application, the user can input an image of a diseased plant leaf, and the application will predict what disease it is and will also give a little background about the disease and suggestions to cure it.
 
   
-## Contributors:
+## 👥 Contributors
+
+### GeoCropAI Team
+
+| Contributor |
+|-------------|
+| **Mandrita Dasgupta** |
+| **Debdeep Ghosh** |
+| **Pijush Pakrashi** |
+| **Ashmrit Banerjee** |
+
+We worked collaboratively on the development, implementation, and enhancement of **GeoCropAI**, combining machine learning, deep learning, and web technologies to build a unified precision agriculture platform.
+
 
 
 ## Home Page of our WebApplication
@@ -33,8 +47,65 @@ Farming is one of the major sectors that influences a country’s economic growt
 
 - Disease Detection System ==> Upload an image of leaf of your plant. The algorithm will tell the crop type and whether it is diseased or healthy. If it is diseased, it will tell you the cause of the disease and suggest you how to prevent/cure the disease accordingly. Note that, for now it only supports few crops.
 
-##How to Run project
-- please check my youtube link https://youtu.be/kU0nf-rzusE
-- https://www.youtube.com/watch?v=eJ-KytG2H5w&t=36s
+## 💻 How to Run Locally
 
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/mandrita16/GeoCropAI.git
+```
+### 2. Navigate to the Project Directory
+```bash
+cd GeoCropAI
+```
+
+### 3. Create a Virtual Environment
+
+Create a Python virtual environment to keep the project's dependencies isolated:
+```bash
+python -m venv venv
+```
+### 4. Activate the Virtual Environment
+
+For Windows:
+```bash
+venv\Scripts\activate
+```
+For macOS / Linux:
+```
+source venv/bin/activate
+```bash
+
+### 5. Install the Required Dependencies
+
+Install all the required Python packages using the project's requirements file:
+```bash
+pip install -r requirments.txt
+```
+
+### 6. Configure the Application
+
+Set up your local config.py file with the required API credentials and configuration values.
+
+⚠️ Important: Never upload API keys, passwords, tokens, or other sensitive information to GitHub. Keep all credentials private and use environment variables whenever possible.
+
+### 7. Run the Application
+
+Start the Flask application by running:
+```bash
+python app.py
+```
+Once the application starts successfully, the terminal will display the local server address. Open that URL in your web browser to access GeoCropAI.
+
+🔄 Quick Setup
+
+If Python and Git are already installed, the basic setup is:
+```bash
+git clone https://github.com/mandrita16/GeoCropAI.git
+cd GeoCropAI
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirments.txt
+python app.py
+```
 
