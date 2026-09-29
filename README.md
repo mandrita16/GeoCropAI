@@ -1,3 +1,11 @@
+<div align="center">
+
+<img src="https://media.gifdb.com/animated-tomato-plant-growing-p5a6dm2ufumrera3.gif" alt="Growing Plant Animation" width="750">
+
+# 🌱 GeoCropAI — Precision Agriculture using Machine Learning
+
+</div>
+
 #  🌱 GeoCropAI — Precision Agriculture using Machine Learning
 
 GeoCropAI is a machine-learning-based web application designed to assist farmers with data-driven agricultural decisions.
@@ -34,7 +42,56 @@ Farming is one of the major sectors that influences a country’s economic growt
 
 We worked collaboratively on the development, implementation, and enhancement of **GeoCropAI**, combining machine learning, deep learning, and web technologies to build a unified precision agriculture platform.
 
+## System Architecture/Workflow
+```bash
+                         ┌──────────────────┐
+                         │       User       │
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                    ┌─────────────────────────┐
+                    │     Flask Web App       │
+                    └───────────┬─────────────┘
+                                │
+             ┌──────────────────┼──────────────────┐
+             ▼                  ▼                  ▼
+      Crop Recommendation  Fertilizer System  Disease Detection
+             │                  │                  │
+             ▼                  ▼                  ▼
+       Soil + Weather       N/P/K Analysis      Leaf Image
+             │                  │                  │
+             ▼                  ▼                  ▼
+       Random Forest       Rule-Based Logic      ResNet9
+             │                  │                  │
+             ▼                  ▼                  ▼
+       Crop Prediction    Fertilizer Advice    Disease Result
 
+```
+## ML Pipeline
+```bash
+Soil Parameters + City
+          ↓
+ OpenWeatherMap API
+          ↓
+Temperature + Humidity
+          ↓
+Random Forest Model
+          ↓
+ Recommended Crop
+```
+```bash
+Leaf Image
+    ↓
+Image Preprocessing
+    ↓
+   ResNet9
+    ↓
+38-Class Classification
+    ↓
+Disease Information
+    ↓
+Prevention / Cure Guidance
+```
 
 ## Home Page of our WebApplication
 ![Home Page of our WebApplication](https://github.com/atharval1/precision-agriculture-using-machine-learning/blob/main/Project-docs/App-snaps/Home.png)
@@ -80,7 +137,7 @@ source venv/bin/activate
 
 Install all the required Python packages using the project's requirements file:
 ```bash
-pip install -r requirments.txt
+pip install -r requirements.txt
 ```
 
 ### 6. Configure the Application
@@ -105,7 +162,7 @@ git clone https://github.com/mandrita16/GeoCropAI.git
 cd GeoCropAI
 python -m venv venv
 venv\Scripts\activate
-pip install -r requirments.txt
+pip install -r requirements.txt
 python app.py
 ```
 
