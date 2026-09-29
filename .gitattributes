@@ -1,2 +1,3 @@
-*.html linguist-vendored=true
 *.py linguist-detectable=true
+*.html linguist-detectable=true linguist-weight=0.25
+*.css linguist-detectable=true linguist-weight=0.25
