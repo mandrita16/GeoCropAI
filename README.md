@@ -43,24 +43,24 @@ We worked collaboratively on the development, implementation, and enhancement of
 ## System Architecture/Workflow
 ```bash
                          ┌──────────────────┐
-                         │       User       │
+                         │       User          │
                          └────────┬─────────┘
-                                  │
-                                  ▼
-                    ┌─────────────────────────┐
-                    │     Flask Web App       │
-                    └───────────┬─────────────┘
-                                │
+                                   │
+                                   ▼
+                     ┌─────────────────────────┐
+                       │     Flask Web App       │
+                     └───────────┬─────────────┘
+                                   │
              ┌──────────────────┼──────────────────┐
-             ▼                  ▼                  ▼
-      Crop Recommendation  Fertilizer System  Disease Detection
-             │                  │                  │
-             ▼                  ▼                  ▼
+             ▼                    ▼                    ▼
+      Crop Recommendation  Fertilizer System   Disease Detection
+             │                   │                   │
+             ▼                  ▼                   ▼
        Soil + Weather       N/P/K Analysis      Leaf Image
-             │                  │                  │
+             │                   │                  │
              ▼                  ▼                  ▼
        Random Forest       Rule-Based Logic      ResNet9
-             │                  │                  │
+             │                   │                  │
              ▼                  ▼                  ▼
        Crop Prediction    Fertilizer Advice    Disease Result
 
