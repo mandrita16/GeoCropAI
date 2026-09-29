@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://media.gifdb.com/animated-tomato-plant-growing-p5a6dm2ufumrera3.gif" alt="Growing Plant Animation" width="750">
+<img src="static/images/tomato-growing-geocropai.gif" width="500">
 
 </div>
 
