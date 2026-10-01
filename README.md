@@ -36,7 +36,7 @@ Farming is one of the major sectors that influences a country’s economic growt
 | **Mandrita Dasgupta** |
 | **Debdeep Ghosh** |
 | **Pijush Pakrashi** |
-| **Ashmrit Banerjee** |
+| **Asmrit Banerjee** |
 
 We worked collaboratively on the development, implementation, and enhancement of **GeoCropAI**, combining machine learning, deep learning, and web technologies to build a unified precision agriculture platform.
 
