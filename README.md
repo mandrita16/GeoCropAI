@@ -1,5 +1,4 @@
 <div align="center">
-
 <img src="static/images/tomato-growing-geocropai.gif" width="500">
 
 </div>
