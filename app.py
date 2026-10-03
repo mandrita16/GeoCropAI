@@ -76,7 +76,10 @@ disease_model.load_state_dict(torch.load(
     disease_model_path, map_location=torch.device('cpu')))
 disease_model.eval()
 
-
+# Loading fertilizer recommendation model
+fertilizer_model_path = 'models/Fertilizer.pkl'
+fertilizer_model = pickle.load(
+    open(fertilizer_model_path, 'rb'))
 
 def weather_fetch(city_name):
     """
@@ -329,38 +332,63 @@ def fert_recommend():
     N = int(request.form['nitrogen'])
     P = int(request.form['phosphorous'])
     K = int(request.form['pottasium'])
-    # ph = float(request.form['ph'])
 
-    df = pd.read_csv('Data/fertilizer.csv')
+    # Load fertilizer dataset
+    df = pd.read_csv('dataset/fertilizer.csv')
 
-    nr = df[df['Crop'] == crop_name]['N'].iloc[0]
-    pr = df[df['Crop'] == crop_name]['P'].iloc[0]
-    kr = df[df['Crop'] == crop_name]['K'].iloc[0]
+    # Find recommended nutrient requirements for selected crop
+    crop_data = df[df['Crop'].str.lower() == crop_name.lower()]
 
+    if crop_data.empty:
+        return render_template(
+            'try_again.html',
+            title=title
+        )
+
+    nr = crop_data['N'].iloc[0]
+    pr = crop_data['P'].iloc[0]
+    kr = crop_data['K'].iloc[0]
+
+    # Calculate nutrient differences
     n = nr - N
     p = pr - P
     k = kr - K
-    temp = {abs(n): "N", abs(p): "P", abs(k): "K"}
+
+    # Find the nutrient with the largest deficiency/excess
+    temp = {
+        abs(n): "N",
+        abs(p): "P",
+        abs(k): "K"
+    }
+
     max_value = temp[max(temp.keys())]
+
     if max_value == "N":
         if n < 0:
             key = 'NHigh'
         else:
-            key = "Nlow"
+            key = 'Nlow'
+
     elif max_value == "P":
         if p < 0:
             key = 'PHigh'
         else:
-            key = "Plow"
+            key = 'Plow'
+
     else:
         if k < 0:
             key = 'KHigh'
         else:
-            key = "Klow"
+            key = 'Klow'
 
+    # Get fertilizer recommendation
     response = Markup(str(fertilizer_dic[key]))
 
-    return render_template('fertilizer-result.html', recommendation=response, title=title)
+    return render_template(
+        'fertilizer-result.html',
+        recommendation=response,
+        title=title
+    )
 
 
 @app.route("/display")
