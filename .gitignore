@@ -1,3 +1,15 @@
-﻿venv
+venv/
+.venv/
 database.db
 .env
+.env.*
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.bak
+*.backup
+*.old
+*.orig
+*~
+backup/
+backups/

@@ -1,175 +1,132 @@
-{% extends 'base.html' %} {% block title %} Fertilizer {% endblock title %} {% block body %}
+{% extends 'base.html' %}
+{% block title %}Fertilizer Recommendation{% endblock title %}
+{% block body %}
 
-<!doctype html>
-<html lang="en">
+<style>
+    .hero-image {
+        background-image: linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.25)), url("/static/images/4.jpeg");
+        min-height: 260px;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: cover;
+        position: relative;
+    }
+    .hero-text {
+        text-align: center;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 90%;
+        color: white;
+    }
+    .text-colors { color: #7dcaf3; }
+    .btn-info { background-color: #7dcaf3; border-color: #7dcaf3; }
+    .fertilizer-form { max-width: 780px; margin: 0 auto; }
+</style>
 
-<head>
-    <!-- Required meta tags -->
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<div class="hero-image">
+    <div class="hero-text">
+        <p class="breadcrumbs text-white font-weight-bold">
+            <span class="mr-2"><a href="{{ url_for('hello_world') }}" class="text-white">Home /</a></span>
+            <span>Fertilizer</span>
+        </p>
+        <h1 class="mb-0 bread font-weight-bold">Fertilizer Recommendation</h1>
+        <p>Enter soil and crop details to predict a suitable fertilizer.</p>
+    </div>
+</div>
 
-    <!-- Bootstrap CSS -->
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-
-    <style>
-        .hero-image {
-            background-image: linear-gradient(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.1)), url("/static/images/4.jpeg");
-            height: 50%;
-            background-position: center;
-            background-repeat: no-repeat;
-            background-size: cover;
-            position: relative;
-        }
-        
-        .hero-text {
-            text-align: center;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-        }
-        
-        .text-colors {
-            color: #7dcaf3;
-        }
-        
-        .btn-info {
-            background-color: #7dcaf3;
-            border-color: #fff;
-        }
-        
-        #myBtn {
-            display: none;
-            position: fixed;
-            bottom: 20px;
-            right: 100px;
-            z-index: 999;
-            font-size: 10px;
-            border: none;
-            outline: none;
-            background-color: #7dcaf3;
-            color: white;
-            cursor: pointer;
-            padding: 10px;
-            border-radius: 50%;
-        }
-        
-        .aboutimg {
-            width: 100%;
-            height: 500px !important;
-        }
-    </style>
-</head>
-
-<body>
-
-    <!--About us section-->
-    <div class="hero-image ">
-        <div class="hero-text">
-            <p class="breadcrumbs text-white font-weight-bold"><span class="mr-2"><a href="{{ url_for('hello_world') }}"
-                        class="text-white">Home /</a></span>
-                <span>fertilizer</span>
-            </p>
-            <h1 class="mb-0 bread font-weight-bold">Get informed advice based on fertilizer based on soil</h1>
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
+        <div class="navbar-nav mx-auto">
+            <a class="nav-item nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a class="nav-item nav-link" href="{{ url_for('crop_recommend') }}">Crop</a>
+            <a class="nav-item nav-link active" href="{{ url_for('fertilizer_recommendation') }}">Fertilizer</a>
+            <a class="nav-item nav-link" href="{{ url_for('disease_prediction') }}">Disease</a>
+            <a class="nav-item nav-link" href="{{ url_for('logout') }}">Logout</a>
         </div>
     </div>
-    <!--/About us section-->
+</nav>
 
-    <!-- second nav -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
-            <div class="navbar-nav mx-auto">
-                <a class="nav-item nav-link active" href="{{ url_for('dashboard') }}">Dashboard <span class="sr-only">(current)</span></a>
-                <a class="nav-item nav-link" href="{{ url_for('crop_recommend') }}">Crop</a>
-                <a class="nav-item nav-link" href="{{ url_for('fertilizer_recommendation') }}">Fertilizer</a>
-                <a class="nav-item nav-link" href="{{ url_for('disease_prediction') }}">Disease</a>
-                <a class="nav-item nav-link" href="{{ url_for('logout') }}">Logout</a>
-            </div>
+<div class="container py-4">
+    <div class="fertilizer-form">
+        {% if error %}
+        <div class="alert alert-danger" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <div class="alert alert-info" role="note">
+            Use measured or locally provided values where possible. The model is trained on a small dataset, so treat its output as a prediction rather than a guaranteed agronomic recommendation.
         </div>
-    </nav>
 
-    <!-- form section  -->
-    <div class="container p-4">
-        <form class="text-uppercase font-weight-bold" method="POST" action="{{ url_for('fert_recommend')}}">
+        <form class="font-weight-bold" method="POST" action="{{ url_for('fert_recommend') }}">
             <div class="form-group">
-                <label for="exampleInputEmail1">Nitrogen</label>
-                <input type="number" class="form-control" name="nitrogen" id="Nitrogen" aria-describedby="emailHelp" placeholder="Enter the value">
+                <label for="temperature">Temperature (°C)</label>
+                <input type="number" class="form-control" id="temperature" name="temperature" step="any" required value="{{ request.query_params.get('temperature', '') }}">
             </div>
-
             <div class="form-group">
-                <label for="exampleInputEmail1">Phosphorous</label>
-                <input type="number" class="form-control" name="phosphorous" id="Phosphorous" aria-describedby="emailHelp" placeholder="Enter the value">
+                <label for="humidity">Humidity (%)</label>
+                <input type="number" class="form-control" id="humidity" name="humidity" min="0" max="100" step="any" required>
             </div>
-
             <div class="form-group">
-                <label for="exampleInputEmail1">Pottasium</label>
-                <input type="number" class="form-control" name="pottasium" id="Pottasium" aria-describedby="emailHelp" placeholder="Enter the value">
+                <label for="moisture">Soil Moisture</label>
+                <input type="number" class="form-control" id="moisture" name="moisture" min="0" step="any" required>
+                <small class="form-text text-muted">Enter the soil-moisture value in the same scale used by the training dataset.</small>
             </div>
-
             <div class="form-group">
-                <label for="exampleInputEmail1">Crop want to grow</label>
-                <select class="form-control form-control-sm" name="cropname" id="crop">
-                    <option>Select</option>
-                    <option>rice</option>
-                    <option>maize</option>
-                    <option>chickpea</option>
-                    <option>kidneybeans</option>
-                    <option>pigeonpeas</option>
-                    <option>mothbeans</option>
-                    <option>mungbean</option>
-                    <option>blackgram</option>
-                    <option>lentil</option>
-                    <option>pomegranate</option>
-                    <option>banana</option>
-                    <option>mango</option>
-                    <option>grapes</option>
-                    <option>watermelon</option>
-                    <option>muskmelon</option>
-                    <option>apple</option>
-                    <option>orange</option>
-                    <option>papaya</option>
-                    <option>coconut</option>
-                    <option>cotton</option>
-                    <option>jute</option>
-                    <option>coffee</option>
-
+                <label for="nitrogen">Nitrogen (N)</label>
+                <input type="number" class="form-control" id="nitrogen" name="nitrogen" min="0" step="any" required>
+            </div>
+            <div class="form-group">
+                <label for="phosphorous">Phosphorus (P)</label>
+                <input type="number" class="form-control" id="phosphorous" name="phosphorous" min="0" step="any" required>
+            </div>
+            <div class="form-group">
+                <label for="pottasium">Potassium (K)</label>
+                <input type="number" class="form-control" id="pottasium" name="pottasium" min="0" step="any" required>
+            </div>
+            <div class="form-group">
+                <label for="soil_type">Soil Type</label>
+                <select class="form-control" id="soil_type" name="soil_type" required>
+                    <option value="" disabled selected>Select soil type</option>
+                    <option value="Black">Black</option>
+                    <option value="Clayey">Clayey</option>
+                    <option value="Loamy">Loamy</option>
+                    <option value="Red">Red</option>
+                    <option value="Sandy">Sandy</option>
                 </select>
             </div>
-
-
-            <div class="col-md-12 text-center">
-                <button type="submit" class="btn btn-dark bg-dark btn-lg">Predict</button>
+            <div class="form-group">
+                <label for="cropname">Crop Type</label>
+                <select class="form-control" id="cropname" name="cropname" required>
+                    <option value="" disabled selected>Select crop type</option>
+                    <option value="Barley">Barley</option>
+                    <option value="Cotton">Cotton</option>
+                    <option value="Ground Nuts">Ground Nuts</option>
+                    <option value="Maize">Maize</option>
+                    <option value="Millets">Millets</option>
+                    <option value="Oil seeds">Oil seeds</option>
+                    <option value="Paddy">Paddy</option>
+                    <option value="Pulses">Pulses</option>
+                    <option value="Sugarcane">Sugarcane</option>
+                    <option value="Tobacco">Tobacco</option>
+                    <option value="Wheat">Wheat</option>
+                </select>
+            </div>
+            <div class="text-center mt-4">
+                <button type="submit" class="btn btn-dark btn-lg">Predict Fertilizer</button>
             </div>
         </form>
     </div>
+</div>
 
+<footer class="page-footer font-small blue pt-4">
+    <div class="footer-copyright text-center py-3 bg-dark text-light p-2" style="background-image: url(https://images.pexels.com/photos/5980/food-sunset-love-field.jpg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940); background-size: cover; min-height: 100px; background-position: center;">
+        <h5>© 2026 Copyright: GeoCropAI</h5>
+        <div class="text-center text-white text-uppercase font-weight-bold">Go Green....</div>
+    </div>
+</footer>
 
-    <!-- footer section start-->
-
-    <footer class="page-footer font-small blue pt-5">
-        <!-- Copyright -->
-        <div class="footer-copyright text-center py-3 bg-dark text-light p-2" style="background-image: url(https://images.pexels.com/photos/5980/food-sunset-love-field.jpg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940);background-size: cover; height: 100px; background-position: center; position:center;">
-            <h5> © 2026 Copyright: GeoCropAI
-                <div class="text-center text-white text-uppercase font-weight-bold">Go Green....</div>
-            </h5>
-        </div>
-
-        <!-- Copyright -->
-    </footer>
-
-    <!-- footer section end -->
-
-
-    <!-- Optional JavaScript -->
-    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
-    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
-</body>
-
-</html>
 {% endblock body %}

@@ -5,11 +5,9 @@ charset-normalizer==3.3.2
 click==8.1.7
 colorama==0.4.6
 
-Flask==2.0.2
-Flask-Bcrypt==1.0.1
-Flask-Login==0.6.3
-Flask-SQLAlchemy==2.5.1
-Flask-WTF==1.2.1
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
 
 greenlet==3.0.3
 idna==3.8
@@ -37,6 +35,5 @@ torchvision==0.19.1
 
 typing_extensions==4.12.2
 urllib3==2.2.2
-Werkzeug==2.0.3
-WTForms==3.1.2
+
 gunicorn==23.0.0
