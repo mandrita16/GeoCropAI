@@ -8,9 +8,8 @@
 GeoCropAI is a machine-learning-based web application designed to assist farmers with data-driven agricultural decisions.
 
 ## DATA SOURCE 📊
-- [Crop recommendation dataset ](https://www.kaggle.com/atharvaingle/crop-recommendation-dataset) (custom built dataset)
-- [Fertilizer suggestion dataset](https://github.com/Gladiator07/Harvestify/blob/master/Data-processed/fertilizer.csv) (custom built dataset)
-- [Disease detection dataset](https://www.kaggle.com/vipoooool/new-plant-diseases-dataset)
+- [Crop recommendation dataset ](https://www.kaggle.com/atharvaingle/crop-recommendation-dataset) 
+- [Fertilizer suggestion dataset](https://www.kaggle.com/datasets/gdabhishek/fertilizer-prediction) 
 
 ## MOTIVATION 💪
 Farming is one of the major sectors that influences a country’s economic growth.
