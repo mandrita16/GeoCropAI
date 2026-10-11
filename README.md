@@ -168,7 +168,7 @@ Buyer: Browse Product Cards
 
 <div align="center">
 
-<img src="Project-docs/App-snaps/Home.png" width="85%" alt="Home Page of our WebApplication">
+<img src="static/Home.png" width="85%" alt="Home Page of our WebApplication">
 
 </div>
 
