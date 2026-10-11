@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="static/images/tomato-growing-geocropai.gif" width="500" alt="GeoCropAI banner">
+<img src="static/tomato-growing-geocropai.gif" width="500" alt="GeoCropAI banner">
 
 # 🌱 GeoCropAI
 
