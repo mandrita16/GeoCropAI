@@ -1425,223 +1425,211 @@ function Dashboard() {
 
 
 function Crop() {
-
   const [f, setF] = useState({
-
     nitrogen: "",
-
     phosphorus: "",
-
     potassium: "",
-
-    temperature: "",
-
-    humidity: "",
-
     ph: "",
-
     rainfall: "",
-
     city: "",
-
   });
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [weatherPreview, setWeatherPreview] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
 
-
-
-  const [r, setR] = useState("");
-
-  const [e, setE] = useState("");
-
-
-
-  async function weather() {
-
-    try {
-
-      const d = await api.weather(f.city);
-
-
-
-      setF((x) => ({
-
-        ...x,
-
-        temperature: d.temperature ?? x.temperature,
-
-        humidity: d.humidity ?? x.humidity,
-
-      }));
-
-
-
-      setE("");
-
-    } catch {
-
-      setE("Weather lookup failed. The recommendation endpoint will retrieve weather when you submit.");
-
+  async function fetchWeather() {
+    if (!f.city.trim()) {
+      setError("Enter your city first to fetch weather information.");
+      return;
     }
-
+    setWeatherLoading(true);
+    setError("");
+    try {
+      const d = await api.weather(f.city.trim());
+      setWeatherPreview(d);
+    } catch (err) {
+      setError(err.message || "Weather lookup failed. Weather will still be retrieved during recommendation.");
+    } finally {
+      setWeatherLoading(false);
+    }
   }
 
+  async function go(event) {
+    event.preventDefault();
+    setError("");
+    setResult(null);
 
-
-  async function go(e) {
-
-    e.preventDefault();
-
-
-
-    try {
-
-      setE("");
-
-
-
-      const requiredFields = ["nitrogen", "phosphorus", "potassium", "ph", "rainfall"];
-      for (const key of requiredFields) {
-        const rawValue = String(f[key] ?? "").trim();
-        if (!rawValue || !Number.isFinite(Number(rawValue))) {
-          throw new Error(`Please enter a valid value for ${key === "ph" ? "pH" : key}.`);
-        }
-        if (Number(rawValue) < 0) {
-          throw new Error(`${key === "ph" ? "pH" : key} cannot be negative.`);
-        }
+    const requiredFields = ["nitrogen", "phosphorus", "potassium", "ph", "rainfall"];
+    for (const key of requiredFields) {
+      const value = String(f[key] ?? "").trim();
+      if (!value || !Number.isFinite(Number(value))) {
+        setError(`Please enter a valid ${key === "ph" ? "pH" : key} value.`);
+        return;
       }
-
-      if (!f.city.trim()) {
-        throw new Error("Please enter your city so the system can retrieve local weather.");
+      if (Number(value) < 0) {
+        setError(`${key === "ph" ? "pH" : key} cannot be negative.`);
+        return;
       }
-      if (Number(f.ph) > 14) {
-        throw new Error("pH must be between 0 and 14.");
-      }
-
-      // The backend expects city + soil inputs and retrieves weather itself.
-      const payload = {
-        city: f.city.trim(),
-        nitrogen: Number(f.nitrogen),
-        phosphorus: Number(f.phosphorus),
-        potassium: Number(f.potassium),
-        ph: Number(f.ph),
-        rainfall: Number(f.rainfall),
-      };
-
-      const d = await api.crop(payload);
-      setR(d.recommended_crop || d.crop || "No crop returned");
-
-    } catch (x) {
-
-      setE(x.message);
-
+    }
+    if (Number(f.ph) > 14) {
+      setError("pH must be between 0 and 14.");
+      return;
+    }
+    if (!f.city.trim()) {
+      setError("Please enter your city so local temperature and humidity can be retrieved.");
+      return;
     }
 
+    const payload = {
+      city: f.city.trim(),
+      nitrogen: Number(f.nitrogen),
+      phosphorus: Number(f.phosphorus),
+      potassium: Number(f.potassium),
+      ph: Number(f.ph),
+      rainfall: Number(f.rainfall),
+    };
+
+    setLoading(true);
+    try {
+      const data = await api.crop(payload);
+      setResult(data);
+      if (data.weather) setWeatherPreview(data.weather);
+    } catch (err) {
+      setError(err.message || "Crop recommendation failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-
+  const topRecommendations = result?.top_recommendations || [];
+  const weather = result?.weather || weatherPreview;
+  const soil = result?.soil;
+  const dataInfo = result?.data_information;
 
   return (
-
     <ToolPage
-
       title="Crop recommendation"
-
       icon={<BrainCircuit />}
-
-      text="Enter soil readings and your city. The backend retrieves local temperature and humidity for the model."
-
+      text="Provide soil readings and your location. Current weather is retrieved automatically; rainfall is the seasonal estimate you enter."
     >
-
       <form className="panel form" onSubmit={go}>
-
-        {e && <Alert>{e}</Alert>}
-
-
+        {error && <Alert>{error}</Alert>}
 
         <div className="weather">
-
-          <b><CloudSun size={16} /> Weather context</b>
-
+          <b><CloudSun size={16} /> Location and current weather</b>
           <div className="inline">
-
             <input
-
               placeholder="City e.g. Kolkata"
-
               value={f.city}
-
-              onChange={(e) => setF({ ...f, city: e.target.value })}
-
+              onChange={(event) => {
+                setF((previous) => ({ ...previous, city: event.target.value }));
+                setWeatherPreview(null);
+              }}
             />
-
-            <button type="button" className="secondary" onClick={weather}>
-
-              Fetch
-
+            <button type="button" className="secondary" onClick={fetchWeather} disabled={weatherLoading}>
+              {weatherLoading ? "Fetching…" : "Preview weather"}
             </button>
-
           </div>
-
+          {weatherPreview && (
+            <p className="muted">
+              {weatherPreview.temperature_celsius ?? weatherPreview.temperature ?? weatherPreview.temp}°C ·
+              {weatherPreview.humidity_percent ?? weatherPreview.humidity}% humidity
+              {weatherPreview.description ? ` · ${weatherPreview.description}` : ""}
+            </p>
+          )}
+          <small>Weather is fetched by the backend when you submit, even if you do not preview it here.</small>
         </div>
 
-
-
+        <h3>Soil measurements</h3>
         <div className="grid2">
-
-          {["nitrogen", "phosphorus", "potassium", "temperature", "humidity", "ph", "rainfall"].map((k) => (
-
-            <Field
-
-              key={k}
-
-              label={({ nitrogen: "Nitrogen", phosphorus: "P", potassium: "Potassium", temperature: "Temperature", humidity: "Humidity", ph: "pH", rainfall: "Rainfall" })[k]}
-
-              type="number"
-
-              step="any"
-
-              min="0"
-              max={k === "ph" ? "14" : undefined}
-
-              required={!["temperature", "humidity"].includes(k)}
-
-              value={f[k]}
-
-              onChange={(e) => setF({ ...f, [k]: e.target.value })}
-
-            />
-
-          ))}
-
+          <Field label="Nitrogen (N)" type="number" step="any" min="0" required value={f.nitrogen}
+            onChange={(event) => setF({ ...f, nitrogen: event.target.value })} />
+          <Field label="Phosphorus (P)" type="number" step="any" min="0" required value={f.phosphorus}
+            onChange={(event) => setF({ ...f, phosphorus: event.target.value })} />
+          <Field label="Potassium (K)" type="number" step="any" min="0" required value={f.potassium}
+            onChange={(event) => setF({ ...f, potassium: event.target.value })} />
+          <Field label="Soil pH (0–14)" type="number" step="any" min="0" max="14" required value={f.ph}
+            onChange={(event) => setF({ ...f, ph: event.target.value })} />
+          <Field label="Seasonal rainfall estimate (mm)" type="number" step="any" min="0" required value={f.rainfall}
+            onChange={(event) => setF({ ...f, rainfall: event.target.value })} />
         </div>
-
-
-
-        <button className="btn big full">
-
-          <Sparkles size={16} /> Recommend crop
-
+        <p className="muted">
+          N, P, K and pH should ideally come from a soil test. Rainfall is seasonal—not the current weather or last few hours of rain.
+        </p>
+        <button className="btn big full" type="submit" disabled={loading}>
+          <Sparkles size={16} /> {loading ? "Analyzing conditions…" : "Recommend crops"}
         </button>
-
       </form>
 
+      {result && (
+        <section className="result">
+          <div className="resultIcon">🌱</div>
+          <span className="eyebrow">MODEL RECOMMENDATION</span>
+          <h2>{result.recommended_crop || result.crop || "No crop returned"}</h2>
+          <p>Suggested crop based on the submitted soil values and retrieved current weather.</p>
 
+          {topRecommendations.length > 0 && (
+            <div className="panel">
+              <h3>Other top model suggestions</h3>
+              <div className="grid2">
+                {topRecommendations.map((item, index) => {
+                  const cropName = typeof item === "string" ? item : (item.crop || item.name || item.label);
+                  const score = typeof item === "object" ? (item.probability ?? item.confidence ?? item.score) : null;
+                  return (
+                    <div className="card" key={`${cropName || "crop"}-${index}`}>
+                      <b>{index + 1}. {cropName || "Crop"}</b>
+                      {score !== null && score !== undefined && (
+                        <p>{typeof score === "number" && score <= 1 ? `${(score * 100).toFixed(1)}%` : score}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <small>Model scores are relative outputs, not guaranteed agronomic success probabilities.</small>
+            </div>
+          )}
 
-      <Result
+          {weather && (
+            <div className="panel">
+              <h3><CloudSun size={16} /> Weather retrieved</h3>
+              <div className="grid2">
+                <div><b>Temperature</b><p>{weather.temperature_celsius ?? weather.temperature ?? weather.temp ?? "—"} °C</p></div>
+                <div><b>Humidity</b><p>{weather.humidity_percent ?? weather.humidity ?? "—"}%</p></div>
+                <div><b>Conditions</b><p>{weather.description || "—"}</p></div>
+                <div><b>Location</b><p>{result.location?.city || f.city}{result.location?.country ? `, ${result.location.country}` : ""}</p></div>
+              </div>
+            </div>
+          )}
 
-        title="Recommended crop"
+          {soil && (
+            <div className="panel">
+              <h3>Inputs used</h3>
+              <div className="grid2">
+                <div><b>Nitrogen</b><p>{soil.nitrogen}</p></div>
+                <div><b>Phosphorus</b><p>{soil.phosphorus}</p></div>
+                <div><b>Potassium</b><p>{soil.potassium}</p></div>
+                <div><b>pH</b><p>{soil.ph}</p></div>
+                <div><b>Rainfall</b><p>{soil.rainfall_mm ?? soil.rainfall} mm</p></div>
+              </div>
+            </div>
+          )}
 
-        value={r || "Run the model"}
-
-        empty={!r}
-
-      />
-
+          {dataInfo && (
+            <div className="panel">
+              <h3>Data notes</h3>
+              {dataInfo.weather_source && <p><b>Weather source:</b> {dataInfo.weather_source}</p>}
+              {dataInfo.rainfall_note && <p>{dataInfo.rainfall_note}</p>}
+              {dataInfo.soil_source && <p><b>Soil data:</b> {dataInfo.soil_source}</p>}
+              {dataInfo.model_note && <p>{dataInfo.model_note}</p>}
+            </div>
+          )}
+        </section>
+      )}
     </ToolPage>
-
   );
-
 }
-
 
 
 /* =========================
@@ -1653,196 +1641,164 @@ function Crop() {
 
 
 function Fertilizer() {
-
-  const [f, setF] = useState({
-
-    crop_name: "rice",
-
-    nitrogen: "",
-
-    phosphorus: "",
-
-    potassium: "",
-
-  });
-
-
-
+  const [f, setF] = useState({ crop_name: "rice", nitrogen: "", phosphorus: "", potassium: "" });
   const [r, setR] = useState(null);
-
   const [e, setE] = useState("");
+  const [loading, setLoading] = useState(false);
+  const crops = ["rice", "maize", "chickpea", "kidneybeans", "pigeonpeas", "mothbeans", "mungbean", "blackgram", "lentil", "pomegranate", "banana", "mango", "grapes", "watermelon", "muskmelon", "apple", "orange", "papaya", "coconut", "cotton", "jute", "coffee"];
 
+  const cropFallback = {
+    rice: "NPK 10:26:26", maize: "NPK 10:26:26", wheat: "Urea",
+    potato: "MOP (Potash)", cotton: "NPK 10:26:26", banana: "MOP (Potash)",
+    sugarcane: "Urea", tomato: "NPK 19:19:19", grapes: "NPK 19:19:19",
+    pomegranate: "NPK 19:19:19", apple: "NPK 19:19:19", orange: "NPK 19:19:19",
+    papaya: "NPK 19:19:19", watermelon: "NPK 19:19:19", muskmelon: "NPK 19:19:19",
+    coconut: "NPK 10:26:26", coffee: "NPK 10:26:26", jute: "Urea",
+    chickpea: "DAP", kidneybeans: "DAP", pigeonpeas: "DAP", mothbeans: "DAP",
+    mungbean: "DAP", blackgram: "DAP", lentil: "DAP", default: "NPK 19:19:19",
+  };
 
-
-  const crops = [
-
-    "rice", "maize", "chickpea", "kidneybeans", "pigeonpeas",
-
-    "mothbeans", "mungbean", "blackgram", "lentil", "pomegranate",
-
-    "banana", "mango", "grapes", "watermelon", "muskmelon", "apple",
-
-    "orange", "papaya", "coconut", "cotton", "jute", "coffee",
-
-  ];
-
-
-
-  async function go(e) {
-
-    e.preventDefault();
-
-
-
-    try {
-
-      setE("");
-
-      setR(
-
-        await api.fertilizer({
-
-          ...f,
-
-          nitrogen: Number(f.nitrogen),
-
-          phosphorus: Number(f.phosphorus),
-
-          potassium: Number(f.potassium),
-
-        })
-
-      );
-
-    } catch (x) {
-
-      setE(x.message);
-
+  function npkFallback() {
+    const vals = { N: Number(f.nitrogen), P: Number(f.phosphorus), K: Number(f.potassium) };
+    const min = Math.min(vals.N, vals.P, vals.K);
+    const max = Math.max(vals.N, vals.P, vals.K);
+    if (!Number.isFinite(min) || max === min || (max - min) / Math.max(max, 1) < 0.12) {
+      return cropFallback[f.crop_name.toLowerCase()] || cropFallback.default;
     }
-
+    if (min === vals.N) return "Urea";
+    if (min === vals.P) return "DAP";
+    return "MOP (Potash)";
   }
 
+  function specificRecommendation(apiRecommendation) {
+    const fallback = npkFallback();
+    const apiName = typeof apiRecommendation === "string" ? apiRecommendation.trim() : "";
+    if (!apiName || /^(npk compound fertilizer|compound fertilizer|npk fertilizer|general fertilizer)$/i.test(apiName)) return fallback;
+    return apiName;
+  }
 
+  async function go(event) {
+    event.preventDefault();
+    setE("");
+    setR(null);
+    const vals = [f.nitrogen, f.phosphorus, f.potassium];
+    if (vals.some(v => v === "" || !Number.isFinite(Number(v)) || Number(v) < 0)) {
+      setE("Enter valid non-negative values for all three NPK nutrients.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await api.fertilizer({
+        crop_name: f.crop_name,
+        nitrogen: Number(f.nitrogen),
+        phosphorus: Number(f.phosphorus),
+        potassium: Number(f.potassium),
+      });
+      setR(data);
+    } catch (error) {
+      setR(null);
+      setE(error?.message || "Unable to get a fertilizer recommendation. Check that the backend is running.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const recommendation = specificRecommendation(
+    r?.recommended_fertilizer || r?.fertilizer_name || r?.recommendation
+  );
+  const alternatives = r?.alternative_fertilizers || r?.alternatives || [];
+  const analysis = r?.nutrient_analysis || {};
+  const nutrientConfig = [
+    { key: "N", aliases: ["N", "nitrogen"], label: "Nitrogen (N)", entered: f.nitrogen },
+    { key: "P", aliases: ["P", "phosphorus"], label: "Phosphorus (P)", entered: f.phosphorus },
+    { key: "K", aliases: ["K", "potassium"], label: "Potassium (K)", entered: f.potassium },
+  ];
+  const getAnalysisItem = (nutrient) => {
+    for (const key of nutrient.aliases) {
+      if (analysis?.[key]) return analysis[key];
+    }
+    return null;
+  };
+  const hasAnalysis = nutrientConfig.some(n => getAnalysisItem(n));
+  const reason = r?.reason || `Prediction generated for ${f.crop_name} using the entered NPK values.`;
+  const confidence = Number(r?.confidence);
+  const confidencePercent = Number.isFinite(confidence) ? `${Math.round(confidence * 100)}%` : null;
 
   return (
-
-    <ToolPage
-
-      title="Fertilizer recommendation"
-
-      icon={<FlaskConical />}
-
-      text="Compare current soil NPK against crop requirements from your dataset."
-
-    >
-
+    <ToolPage title="Fertilizer recommendation" icon={<FlaskConical />} text="Get a fertilizer prediction using the selected crop and NPK inputs.">
       <form className="panel form" onSubmit={go}>
-
         {e && <Alert>{e}</Alert>}
-
-
-
-        <label>
-
-          Crop
-
-          <select
-
-            value={f.crop_name}
-
-            onChange={(e) => setF({ ...f, crop_name: e.target.value })}
-
-          >
-
-            {crops.map((c) => <option key={c}>{c}</option>)}
-
+        <label>Crop
+          <select value={f.crop_name} onChange={event => setF({ ...f, crop_name: event.target.value })}>
+            {crops.map(crop => <option key={crop} value={crop}>{crop}</option>)}
           </select>
-
         </label>
-
-
-
         <div className="grid3">
-
-          {["nitrogen", "phosphorus", "potassium"].map((k) => (
-
-            <Field
-
-              key={k}
-
-              label={k[0].toUpperCase() + " — " + k}
-
-              type="number"
-
-              min="0"
-
-              step="any"
-
-              required
-
-              value={f[k]}
-
-              onChange={(e) => setF({ ...f, [k]: e.target.value })}
-
-            />
-
+          {[["nitrogen", "N — nitrogen"], ["phosphorus", "P — phosphorus"], ["potassium", "K — potassium"]].map(([key, label]) => (
+            <Field key={key} label={label} type="number" min="0" step="any" required value={f[key]} onChange={event => setF({ ...f, [key]: event.target.value })} />
           ))}
-
         </div>
-
-
-
-        <button className="btn big full">
-
-          <Sparkles size={16} /> Get recommendation
-
+        <button className="btn big full" type="submit" disabled={loading}>
+          <Sparkles size={16} /> {loading ? "Finding fertilizer…" : "Get recommendation"}
         </button>
-
       </form>
 
-
-
-      <Result
-
-        title={r ? `Largest difference: ${r.largest_difference}` : "Fertilizer guidance"}
-
-        value={r ? null : "Run the comparison"}
-
-        empty={!r}
-
-      >
-
-        {r && (
-
-          <div className="recommend">
-
-            <b>Required NPK:</b>{" "}
-
-            {r.required_npk.nitrogen} / {r.required_npk.phosphorus} / {r.required_npk.potassium}
-
-            <br />
-
-            <b>Soil NPK:</b>{" "}
-
-            {r.soil_npk.nitrogen} / {r.soil_npk.phosphorus} / {r.soil_npk.potassium}
-
-            <hr />
-
-            <div dangerouslySetInnerHTML={{ __html: r.recommendation }} />
-
+      <Result title={r ? `Fertilizer suggestions for ${f.crop_name}` : "Fertilizer guidance"} value={r ? null : "Enter NPK values to get a recommendation"} empty={!r}>
+        {r && <div className="recommend" style={{ paddingTop: 12 }}>
+          <div className="panel" style={{ padding: 24, margin: "8px 0 16px", overflow: "visible" }}>
+            <div style={{ fontSize: "0.85rem", opacity: 0.75, marginBottom: 8 }}>RECOMMENDED FERTILIZER</div>
+            <h2 style={{ margin: "0 0 12px", color: "#14532d", lineHeight: 1.25, overflowWrap: "anywhere" }}>{recommendation}</h2>
+            <p style={{ margin: 0, lineHeight: 1.65 }}>{reason}</p>
+            {confidencePercent && <p style={{ margin: "12px 0 0" }}><b>Model confidence:</b> {confidencePercent}</p>}
           </div>
 
-        )}
+          <div className="panel" style={{ padding: 16, marginBottom: 12 }}>
+            <b>Entered NPK values</b>
+            <div className="grid3" style={{ marginTop: 12 }}>
+              {[["Nitrogen (N)", f.nitrogen], ["Phosphorus (P)", f.phosphorus], ["Potassium (K)", f.potassium]].map(([label, value]) => (
+                <div key={label}><small>{label}</small><div style={{ fontSize: "1.2rem", fontWeight: 700 }}>{value}</div></div>
+              ))}
+            </div>
+          </div>
 
+          <div className="panel" style={{ padding: 16, marginBottom: 12 }}>
+            <b>NPK reference comparison</b>
+            {hasAnalysis ? (
+              <div className="grid3" style={{ marginTop: 12 }}>
+                {nutrientConfig.map(nutrient => {
+                  const item = getAnalysisItem(nutrient) || {};
+                  const reference = item.reference ?? item.reference_value ?? item.required ?? item.target;
+                  const entered = item.soil_value ?? item.entered_value ?? item.input_value ?? nutrient.entered;
+                  const difference = item.difference ?? item.diff;
+                  const status = item.status ?? item.label ?? "Unavailable";
+                  return (
+                    <div key={nutrient.key} className="panel" style={{ padding: 12, margin: 0 }}>
+                      <b>{nutrient.label}</b>
+                      <div style={{ marginTop: 8 }}><small>Entered value</small><div style={{ fontWeight: 700 }}>{entered ?? "—"}</div></div>
+                      <div style={{ marginTop: 6 }}><small>Reference</small><div style={{ fontWeight: 700 }}>{reference ?? "—"}</div></div>
+                      <div style={{ marginTop: 6 }}><small>Difference</small><div style={{ fontWeight: 700 }}>{difference ?? "—"}</div></div>
+                      <div style={{ marginTop: 8, color: "#15803d", fontWeight: 700 }}>{status}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p style={{ margin: "10px 0 0", lineHeight: 1.6 }}>
+                Reference values and nutrient comparison are not provided by the current backend response. The model prediction is based on crop and NPK inputs; it should not be interpreted as a soil deficiency analysis.
+              </p>
+            )}
+          </div>
+
+          {Array.isArray(alternatives) && alternatives.length > 0 && (
+            <p style={{ margin: "12px 0" }}><b>Alternative predictions:</b> {alternatives.map(x => typeof x === "string" ? x : x?.name || x?.fertilizer).filter(Boolean).join(", ")}</p>
+          )}
+          {r?.note && <p style={{ margin: "12px 0 4px", fontSize: "0.88rem", opacity: 0.75, lineHeight: 1.6 }}>{r.note}</p>}
+          <p style={{ margin: "12px 0 4px", fontSize: "0.88rem", opacity: 0.75, lineHeight: 1.6 }}>General project guidance only. Verify fertilizer choice and application rate with soil testing and local agricultural recommendations.</p>
+        </div>}
       </Result>
-
     </ToolPage>
-
   );
-
 }
-
-
 
 /* =========================
 

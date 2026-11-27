@@ -1,14 +1,17 @@
 
 import os
 import math
+import re
 from io import BytesIO
 from datetime import datetime, timezone
 from typing import Optional
 
 import cloudinary
 import cloudinary.uploader
+
 from bson import ObjectId
-from pymongo.errors import PyMongoError, DuplicateKeyError
+from pymongo.errors import PyMongoError
+
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -17,9 +20,12 @@ from fastapi import (
     UploadFile,
     File,
     Form,
+    Query,
 )
+
 from jose import JWTError, jwt
 from PIL import Image, UnidentifiedImageError
+
 from pydantic import BaseModel, Field, field_validator
 
 from backend.database import products_collection
@@ -54,12 +60,15 @@ ALLOWED_IMAGE_FORMATS = {
     "WEBP": "image/webp",
 }
 
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
+
 if not os.getenv("CLOUDINARY_URL"):
     raise ValueError("CLOUDINARY_URL is not set in the root .env file")
 
 
 # ============================================================
-# PRODUCT VALIDATION
+# VALIDATION HELPERS
 # ============================================================
 
 def validate_non_empty_string(value: str, field_name: str):
@@ -81,25 +90,27 @@ def validate_finite_positive_number(value: float, field_name: str):
     return value
 
 
+# ============================================================
+# PRODUCT CREATE MODEL
+# ============================================================
+
 class ProductCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     category: str = Field(..., min_length=1, max_length=50)
     description: Optional[str] = Field(default="", max_length=1000)
+
     price: float = Field(..., gt=0)
     quantity: float = Field(..., gt=0)
+
     unit: str = Field(default="kg", min_length=1, max_length=20)
     location: str = Field(..., min_length=1, max_length=200)
+
     image_url: Optional[str] = ""
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, value):
-        value = validate_non_empty_string(value, "Product name")
-
-        if len(value) < 2:
-            raise ValueError("Product name must contain at least 2 characters")
-
-        return value
+        return validate_non_empty_string(value, "Product name")
 
     @field_validator("category")
     @classmethod
@@ -129,6 +140,47 @@ class ProductCreate(BaseModel):
 
         if value <= 0:
             raise ValueError("Value must be greater than zero")
+
+        return value
+
+
+# ============================================================
+# PRODUCT UPDATE MODEL
+# ============================================================
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=100)
+    category: Optional[str] = Field(None, min_length=1, max_length=50)
+    description: Optional[str] = Field(None, max_length=1000)
+
+    price: Optional[float] = Field(None, gt=0)
+    quantity: Optional[float] = Field(None, ge=0)
+
+    unit: Optional[str] = Field(None, min_length=1, max_length=20)
+    location: Optional[str] = Field(None, min_length=1, max_length=200)
+
+    @field_validator(
+        "name",
+        "category",
+        "description",
+        "unit",
+        "location",
+    )
+    @classmethod
+    def validate_text_fields(cls, value):
+        if value is not None:
+            value = value.strip()
+
+            if not value:
+                raise ValueError("Field cannot be empty")
+
+        return value
+
+    @field_validator("price", "quantity")
+    @classmethod
+    def validate_numeric_fields(cls, value):
+        if value is not None and not math.isfinite(value):
+            raise ValueError("Value must be finite")
 
         return value
 
@@ -203,6 +255,24 @@ def require_farmer(user: dict):
 
 
 # ============================================================
+# CLOUDINARY CLEANUP
+# ============================================================
+
+def delete_cloudinary_image(public_id: Optional[str]):
+    if not public_id:
+        return
+
+    try:
+        cloudinary.uploader.destroy(
+            public_id,
+            resource_type="image",
+        )
+    except Exception:
+        # Cleanup failure should not hide the original error.
+        pass
+
+
+# ============================================================
 # IMAGE VALIDATION
 # ============================================================
 
@@ -237,7 +307,11 @@ def validate_image(image_bytes: bytes):
     except HTTPException:
         raise
 
-    except (UnidentifiedImageError, OSError, ValueError):
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+    ):
         raise HTTPException(
             status_code=400,
             detail="Uploaded file is not a valid image",
@@ -248,7 +322,10 @@ def validate_image(image_bytes: bytes):
 # DATABASE PRODUCT CREATION
 # ============================================================
 
-def save_product(data: dict, image_public_id: Optional[str] = None):
+def save_product(
+    data: dict,
+    image_public_id: Optional[str] = None,
+):
     data["created_at"] = datetime.now(timezone.utc)
     data["available"] = True
 
@@ -262,13 +339,8 @@ def save_product(data: dict, image_public_id: Optional[str] = None):
         }
 
     except PyMongoError:
-        # If DB insertion fails after Cloudinary upload,
-        # attempt to remove the uploaded image.
-        if image_public_id:
-            try:
-                cloudinary.uploader.destroy(image_public_id)
-            except Exception:
-                pass
+        # Remove Cloudinary image if database insertion fails.
+        delete_cloudinary_image(image_public_id)
 
         raise HTTPException(
             status_code=503,
@@ -332,16 +404,10 @@ async def create_product_with_image(
     unit = validate_non_empty_string(unit, "Unit")
     description = description.strip()
 
-    if len(name) < 2:
+    if len(name) < 2 or len(name) > 100:
         raise HTTPException(
             status_code=422,
-            detail="Product name must contain at least 2 characters",
-        )
-
-    if len(name) > 100:
-        raise HTTPException(
-            status_code=422,
-            detail="Product name cannot exceed 100 characters",
+            detail="Product name must contain 2-100 characters",
         )
 
     if len(category) > 50:
@@ -368,28 +434,27 @@ async def create_product_with_image(
             detail="Description cannot exceed 1000 characters",
         )
 
-    # Validate numeric values
     validate_finite_positive_number(price, "Price")
     validate_finite_positive_number(quantity, "Quantity")
 
-    # Read no more than 5 MB + 1 byte to detect oversized files.
+    # Read at most 5 MB + 1 byte.
     image_bytes = await image.read(MAX_IMAGE_SIZE + 1)
     await image.close()
 
-    # Validate actual file content, not just client MIME type.
     detected_content_type = validate_image(image_bytes)
 
-    # Optional: reject mismatch between reported MIME and actual content.
+    # Verify reported MIME type against actual file content.
     if (
         image.content_type
         and image.content_type != detected_content_type
+        and image.content_type != "application/octet-stream"
     ):
         raise HTTPException(
             status_code=400,
             detail="Image file type does not match its content",
         )
 
-    # Upload image to Cloudinary
+    # Upload to Cloudinary
     try:
         uploaded = cloudinary.uploader.upload(
             image_bytes,
@@ -407,6 +472,10 @@ async def create_product_with_image(
     image_public_id = uploaded.get("public_id")
 
     if not image_url or not image_public_id:
+        # Clean up if Cloudinary gave us a public ID but
+        # the response was otherwise incomplete.
+        delete_cloudinary_image(image_public_id)
+
         raise HTTPException(
             status_code=502,
             detail="Cloudinary returned an invalid upload response",
@@ -455,7 +524,8 @@ def serialize_product(
         "seller_id": product.get("seller_id", ""),
     }
 
-    # Seller email is included only for the seller's own listings.
+    # Email is private and only included in the farmer's
+    # own listings response.
     if include_seller_email:
         result["seller_email"] = product.get("seller_email", "")
 
@@ -463,27 +533,151 @@ def serialize_product(
 
 
 # ============================================================
-# GET ALL AVAILABLE PRODUCTS
+# GET PRODUCTS - PAGINATION, SEARCH AND FILTERS
 # ============================================================
 
 @router.get("/products")
-def get_products():
-    try:
-        products = list(
-            products_collection.find(
-                {"available": True}
-            ).sort(
-                "created_at",
-                -1,
-            )
+def get_products(
+    page: int = Query(
+        default=1,
+        ge=1,
+        description="Page number",
+    ),
+    limit: int = Query(
+        default=DEFAULT_PAGE_SIZE,
+        ge=1,
+        le=MAX_PAGE_SIZE,
+        description="Number of products per page",
+    ),
+    search: Optional[str] = Query(
+        default=None,
+        max_length=100,
+        description="Search name, category, or description",
+    ),
+    category: Optional[str] = Query(
+        default=None,
+        max_length=50,
+        description="Filter by category",
+    ),
+    location: Optional[str] = Query(
+        default=None,
+        max_length=200,
+        description="Filter by location",
+    ),
+    min_price: Optional[float] = Query(
+        default=None,
+        ge=0,
+        description="Minimum price",
+    ),
+    max_price: Optional[float] = Query(
+        default=None,
+        ge=0,
+        description="Maximum price",
+    ),
+):
+    # Validate price range.
+    if (
+        min_price is not None
+        and max_price is not None
+        and min_price > max_price
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="min_price cannot be greater than max_price",
         )
 
+    query = {
+        "available": True,
+    }
+
+    # Search product name, category, and description.
+    if search and search.strip():
+        search_pattern = re.escape(search.strip())
+
+        query["$or"] = [
+            {
+                "name": {
+                    "$regex": search_pattern,
+                    "$options": "i",
+                }
+            },
+            {
+                "category": {
+                    "$regex": search_pattern,
+                    "$options": "i",
+                }
+            },
+            {
+                "description": {
+                    "$regex": search_pattern,
+                    "$options": "i",
+                }
+            },
+        ]
+
+    # Category filter.
+    if category and category.strip():
+        query["category"] = {
+            "$regex": re.escape(category.strip()),
+            "$options": "i",
+        }
+
+    # Location filter.
+    if location and location.strip():
+        query["location"] = {
+            "$regex": re.escape(location.strip()),
+            "$options": "i",
+        }
+
+    # Price range filters.
+    if min_price is not None or max_price is not None:
+        query["price"] = {}
+
+        if min_price is not None:
+            query["price"]["$gte"] = min_price
+
+        if max_price is not None:
+            query["price"]["$lte"] = max_price
+
+    try:
+        total_products = products_collection.count_documents(query)
+
+        total_pages = (
+            math.ceil(total_products / limit)
+            if total_products > 0
+            else 0
+        )
+
+        skip = (page - 1) * limit
+
+        products = list(
+            products_collection.find(query)
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+
+        serialized_products = [
+            serialize_product(product)
+            for product in products
+        ]
+
         return {
-            "count": len(products),
-            "products": [
-                serialize_product(product)
-                for product in products
-            ],
+            "count": len(serialized_products),
+            "total_products": total_products,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_previous": page > 1,
+            "filters": {
+                "search": search,
+                "category": category,
+                "location": location,
+                "min_price": min_price,
+                "max_price": max_price,
+            },
+            "products": serialized_products,
         }
 
     except PyMongoError:
@@ -507,7 +701,9 @@ def get_product(product_id: str):
 
     try:
         product = products_collection.find_one(
-            {"_id": ObjectId(product_id)}
+            {
+                "_id": ObjectId(product_id),
+            }
         )
 
     except PyMongoError:
@@ -540,7 +736,9 @@ def get_my_listings(
     try:
         products = list(
             products_collection.find(
-                {"seller_id": user["id"]}
+                {
+                    "seller_id": user["id"],
+                }
             ).sort(
                 "created_at",
                 -1,
@@ -562,4 +760,89 @@ def get_my_listings(
         raise HTTPException(
             status_code=503,
             detail="Unable to retrieve your listings at this time",
+        )
+
+
+# ============================================================
+# UPDATE PRODUCT
+# ============================================================
+
+@router.put("/products/{product_id}")
+def update_product(
+    product_id: str,
+    product_data: ProductUpdate,
+    authorization: Optional[str] = Header(default=None),
+):
+    user = get_current_user(authorization)
+
+    require_farmer(user)
+
+    # Validate product ID.
+    if not ObjectId.is_valid(product_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid product ID",
+        )
+
+    # Only fields explicitly provided by the client
+    # should be updated.
+    update_data = product_data.model_dump(
+        exclude_unset=True,
+    )
+
+    if not update_data:
+        raise HTTPException(
+            status_code=400,
+            detail="No fields provided for update",
+        )
+
+    try:
+        existing_product = products_collection.find_one(
+            {
+                "_id": ObjectId(product_id),
+            }
+        )
+
+        if not existing_product:
+            raise HTTPException(
+                status_code=404,
+                detail="Product not found",
+            )
+
+        # Ownership check.
+        if existing_product.get("seller_id") != user["id"]:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only update your own products",
+            )
+
+        update_data["updated_at"] = datetime.now(timezone.utc)
+
+        products_collection.update_one(
+            {
+                "_id": ObjectId(product_id),
+            },
+            {
+                "$set": update_data,
+            },
+        )
+
+        updated_product = products_collection.find_one(
+            {
+                "_id": ObjectId(product_id),
+            }
+        )
+
+        return {
+            "message": "Product updated successfully",
+            "product": serialize_product(
+                updated_product,
+                include_seller_email=True,
+            ),
+        }
+
+    except PyMongoError:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to update product at this time",
         )

@@ -5,37 +5,46 @@ import os
 from fastapi import APIRouter, HTTPException, status
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    EmailStr,
+    Field,
+    field_validator,
+)
 from pymongo.errors import PyMongoError, DuplicateKeyError
 
 from backend.database import users_collection
 
 
+# ============================================================
+# ROUTER
+# ============================================================
+
 router = APIRouter(
     prefix="/auth",
-    tags=["Authentication"]
+    tags=["Authentication"],
 )
 
 
-# --------------------------------------------------
-# Password hashing
-# --------------------------------------------------
+# ============================================================
+# PASSWORD HASHING
+# ============================================================
 
 pwd_context = CryptContext(
     schemes=["bcrypt"],
-    deprecated="auto"
+    deprecated="auto",
 )
 
 
-# --------------------------------------------------
-# JWT configuration
-# --------------------------------------------------
+# ============================================================
+# JWT CONFIGURATION
+# ============================================================
 
 SECRET_KEY = os.getenv("JWT_SECRET")
 
 if not SECRET_KEY:
-    raise ValueError(
-        "JWT_SECRET is not set in the .env file"
+    raise RuntimeError(
+        "JWT_SECRET is missing. Please configure it in your .env file."
     )
 
 ALGORITHM = "HS256"
@@ -43,29 +52,32 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 
-# --------------------------------------------------
-# Request schemas
-# --------------------------------------------------
+# ============================================================
+# REQUEST SCHEMAS
+# ============================================================
 
 class SignupRequest(BaseModel):
 
     username: str = Field(
         min_length=3,
-        max_length=30
+        max_length=30,
     )
 
     email: EmailStr
 
     password: str = Field(
         min_length=8,
-        max_length=72
     )
 
     role: str
 
+    # --------------------------------------------------------
+    # Username normalization
+    # --------------------------------------------------------
+
     @field_validator("username")
     @classmethod
-    def validate_username(cls, value):
+    def normalize_username(cls, value):
 
         value = value.strip()
 
@@ -74,13 +86,51 @@ class SignupRequest(BaseModel):
                 "Username cannot be empty"
             )
 
+        if len(value) < 3:
+            raise ValueError(
+                "Username must contain at least 3 characters"
+            )
+
+        if len(value) > 30:
+            raise ValueError(
+                "Username cannot exceed 30 characters"
+            )
+
         return value
+
+    # --------------------------------------------------------
+    # Email normalization
+    # --------------------------------------------------------
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value):
 
-        return value.strip().lower()
+        return str(value).strip().lower()
+
+    # --------------------------------------------------------
+    # Password validation
+    # --------------------------------------------------------
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value):
+
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError(
+                "Password cannot exceed 72 bytes"
+            )
+
+        if not value.strip():
+            raise ValueError(
+                "Password cannot be empty"
+            )
+
+        return value
+
+    # --------------------------------------------------------
+    # Role validation
+    # --------------------------------------------------------
 
     @field_validator("role")
     @classmethod
@@ -88,7 +138,10 @@ class SignupRequest(BaseModel):
 
         value = value.strip().lower()
 
-        allowed_roles = ["farmer", "buyer"]
+        allowed_roles = {
+            "farmer",
+            "buyer",
+        }
 
         if value not in allowed_roles:
             raise ValueError(
@@ -104,19 +157,37 @@ class LoginRequest(BaseModel):
 
     password: str = Field(
         min_length=1,
-        max_length=72
     )
+
+    # --------------------------------------------------------
+    # Email normalization
+    # --------------------------------------------------------
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value):
 
-        return value.strip().lower()
+        return str(value).strip().lower()
+
+    # --------------------------------------------------------
+    # Password validation
+    # --------------------------------------------------------
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value):
+
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError(
+                "Password cannot exceed 72 bytes"
+            )
+
+        return value
 
 
-# --------------------------------------------------
-# Password functions
-# --------------------------------------------------
+# ============================================================
+# PASSWORD FUNCTIONS
+# ============================================================
 
 def hash_password(password: str) -> str:
 
@@ -125,30 +196,35 @@ def hash_password(password: str) -> str:
 
 def verify_password(
     plain_password: str,
-    hashed_password: str
+    hashed_password: str,
 ) -> bool:
 
     try:
+
+        if not hashed_password:
+            return False
+
         return pwd_context.verify(
             plain_password,
-            hashed_password
+            hashed_password,
         )
 
     except Exception:
+        # Invalid/corrupted hash should never crash login.
         return False
 
 
-# --------------------------------------------------
-# JWT functions
-# --------------------------------------------------
+# ============================================================
+# JWT FUNCTIONS
+# ============================================================
 
 def create_access_token(
     user_id: str,
     email: str,
-    role: str
+    role: str,
 ):
 
-    expire = datetime.now(
+    expiration = datetime.now(
         timezone.utc
     ) + timedelta(
         minutes=ACCESS_TOKEN_EXPIRE_MINUTES
@@ -158,69 +234,124 @@ def create_access_token(
         "sub": user_id,
         "email": email,
         "role": role,
-        "exp": expire
+        "exp": expiration,
     }
 
-    return jwt.encode(
+    token = jwt.encode(
         payload,
         SECRET_KEY,
-        algorithm=ALGORITHM
+        algorithm=ALGORITHM,
     )
 
+    return token
 
-# --------------------------------------------------
-# Signup
-# --------------------------------------------------
 
-@router.post(
-    "/signup",
-    status_code=status.HTTP_201_CREATED
-)
-def signup(data: SignupRequest):
+def decode_access_token(token: str):
 
     try:
 
-        # Check for existing email
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+        )
+
+        user_id = payload.get("sub")
+        email = payload.get("email")
+        role = payload.get("role")
+
+        if not user_id or not email or not role:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+            )
+
+        if role not in {"farmer", "buyer"}:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user role",
+            )
+
+        return payload
+
+    except JWTError:
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+
+# ============================================================
+# SIGNUP
+# ============================================================
+
+@router.post(
+    "/signup",
+    status_code=status.HTTP_201_CREATED,
+)
+def signup(data: SignupRequest):
+
+    # --------------------------------------------------------
+    # 1. Check whether email already exists
+    # --------------------------------------------------------
+
+    try:
+
         existing_user = users_collection.find_one({
-            "email": data.email
+            "email": data.email,
         })
 
         if existing_user:
-
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email already registered"
+                detail="Email already registered",
             )
 
-        # Check for existing username
+        # ----------------------------------------------------
+        # 2. Check whether username already exists
+        # ----------------------------------------------------
+
         existing_username = users_collection.find_one({
-            "username": data.username
+            "username": data.username,
         })
 
         if existing_username:
-
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Username already taken"
+                detail="Username already taken",
             )
 
-        # Create user document
+        # ----------------------------------------------------
+        # 3. Hash password
+        # ----------------------------------------------------
+
+        password_hash = hash_password(
+            data.password
+        )
+
+        # ----------------------------------------------------
+        # 4. Create user document
+        # ----------------------------------------------------
+
         user = {
             "username": data.username,
             "email": data.email,
-            "password_hash": hash_password(
-                data.password
-            ),
+            "password_hash": password_hash,
             "role": data.role,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc),
         }
+
+        # ----------------------------------------------------
+        # 5. Insert user
+        # ----------------------------------------------------
 
         result = users_collection.insert_one(user)
 
         return {
             "message": "Account created successfully",
             "user_id": str(result.inserted_id),
-            "role": data.role
+            "role": data.role,
         }
 
     except HTTPException:
@@ -228,54 +359,91 @@ def signup(data: SignupRequest):
 
     except DuplicateKeyError:
 
+        # Database unique indexes handle concurrent signup
+        # attempts safely.
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email or username already registered"
+            detail="Email or username already registered",
         )
 
     except PyMongoError:
 
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service unavailable"
+            detail="Database service unavailable",
         )
 
 
-# --------------------------------------------------
-# Login
-# --------------------------------------------------
+# ============================================================
+# LOGIN
+# ============================================================
 
 @router.post("/login")
 def login(data: LoginRequest):
 
     try:
 
+        # ----------------------------------------------------
+        # 1. Find user by email
+        # ----------------------------------------------------
+
         user = users_collection.find_one({
-            "email": data.email
+            "email": data.email,
         })
+
+        # ----------------------------------------------------
+        # 2. Validate credentials
+        # ----------------------------------------------------
 
         if not user:
 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="Invalid email or password",
             )
+
+        password_hash = user.get(
+            "password_hash",
+            "",
+        )
 
         if not verify_password(
             data.password,
-            user.get("password_hash", "")
+            password_hash,
         ):
 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="Invalid email or password",
             )
+
+        # ----------------------------------------------------
+        # 3. Validate user role
+        # ----------------------------------------------------
+
+        role = user.get("role")
+
+        if role not in {"farmer", "buyer"}:
+
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user account",
+            )
+
+        # ----------------------------------------------------
+        # 4. Generate JWT
+        # ----------------------------------------------------
 
         token = create_access_token(
             user_id=str(user["_id"]),
             email=user["email"],
-            role=user["role"]
+            role=role,
         )
+
+        # ----------------------------------------------------
+        # 5. Return response
+        # ----------------------------------------------------
 
         return {
             "message": "Login successful",
@@ -285,8 +453,8 @@ def login(data: LoginRequest):
                 "id": str(user["_id"]),
                 "username": user["username"],
                 "email": user["email"],
-                "role": user["role"]
-            }
+                "role": role,
+            },
         }
 
     except HTTPException:
@@ -296,5 +464,5 @@ def login(data: LoginRequest):
 
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database service unavailable"
+            detail="Database service unavailable",
         )

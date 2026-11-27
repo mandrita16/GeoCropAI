@@ -1,0 +1,62 @@
+{
+  "dataset": "dataset\\fertilizer.csv",
+  "rows_used": 2198,
+  "features": [
+    "Crop",
+    "N",
+    "P",
+    "K"
+  ],
+  "target": "Fertilizer Name",
+  "crops": [
+    "apple",
+    "banana",
+    "blackgram",
+    "chickpea",
+    "coconut",
+    "coffee",
+    "cotton",
+    "grapes",
+    "jute",
+    "kidneybeans",
+    "lentil",
+    "maize",
+    "mango",
+    "mothbeans",
+    "mungbean",
+    "muskmelon",
+    "orange",
+    "papaya",
+    "pigeonpeas",
+    "pomegranate",
+    "rice",
+    "watermelon"
+  ],
+  "classes": [
+    "10-26-26",
+    "14-35-14",
+    "17-17-17",
+    "20-20",
+    "28-28",
+    "DAP",
+    "Urea"
+  ],
+  "selected_model": "ExtraTrees",
+  "test_metrics": {
+    "RandomForest": {
+      "accuracy": 0.6363636363636364,
+      "precision_macro": 0.583143337836029,
+      "recall_macro": 0.5708310942997318,
+      "f1_macro": 0.5715156208674799,
+      "f1_weighted": 0.6278258634124149
+    },
+    "ExtraTrees": {
+      "accuracy": 0.65,
+      "precision_macro": 0.6156094696516747,
+      "recall_macro": 0.5997098809797535,
+      "f1_macro": 0.6044632049745109,
+      "f1_weighted": 0.6459335775723215
+    }
+  },
+  "note": "Dataset is synthetic/expanded. Metrics measure consistency with dataset labels and do not establish agronomic validity."
+}

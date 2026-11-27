@@ -240,7 +240,8 @@ try:
         "Crop",
         "N",
         "P",
-        "K"
+        "K",
+        "Fertilizer Name"
     }
 
     missing_columns = required_columns - set(
@@ -262,8 +263,10 @@ try:
         )
 
     fertilizer_data = fertilizer_data.dropna(
-        subset=["Crop", "N", "P", "K"]
+        subset=["Crop", "N", "P", "K", "Fertilizer Name"]
     )
+    fertilizer_data["Crop"] = fertilizer_data["Crop"].astype(str).str.strip().str.lower()
+    fertilizer_data["Fertilizer Name"] = fertilizer_data["Fertilizer Name"].astype(str).str.strip()
 
     print("Fertilizer dataset loaded successfully.")
 
@@ -739,57 +742,63 @@ async def recommend_crop(data: CropRequest):
 
 
 # ============================================================
+# FERTILIZER MODEL LOADING
+# ============================================================
+
+FERTILIZER_MODEL_PATH = os.path.join(
+    MODEL_DIR,
+    "Fertilizer.pkl"
+)
+
+fertilizer_model = None
+fertilizer_model_metrics = None
+fertilizer_model_error = None
+
+try:
+    if not os.path.exists(FERTILIZER_MODEL_PATH):
+        raise FileNotFoundError(
+            f"Fertilizer model not found: {FERTILIZER_MODEL_PATH}"
+        )
+
+    fertilizer_model = joblib.load(FERTILIZER_MODEL_PATH)
+
+    if not hasattr(fertilizer_model, "predict"):
+        raise TypeError("Loaded fertilizer model does not support prediction.")
+
+    if not hasattr(fertilizer_model, "predict_proba"):
+        raise TypeError("Loaded fertilizer model does not support probability predictions.")
+
+    print("Fertilizer model loaded successfully.")
+    print(f"Model path: {FERTILIZER_MODEL_PATH}")
+    print(f"Model type: {type(fertilizer_model).__name__}")
+
+except Exception as e:
+    fertilizer_model = None
+    fertilizer_model_error = str(e)
+    print(f"Fertilizer model loading error: {e}")
+
+
+# ============================================================
 # FERTILIZER RECOMMENDATION REQUEST
 # ============================================================
 
 class FertilizerRequest(BaseModel):
+    crop_name: str = Field(..., min_length=1)
+    nitrogen: float = Field(..., ge=0)
+    phosphorus: float = Field(..., ge=0)
+    potassium: float = Field(..., ge=0)
 
-    crop_name: str = Field(
-        ...,
-        min_length=1
-    )
-
-    nitrogen: float = Field(
-        ...,
-        ge=0
-    )
-
-    phosphorus: float = Field(
-        ...,
-        ge=0
-    )
-
-    potassium: float = Field(
-        ...,
-        ge=0
-    )
-
-    @validator(
-        "nitrogen",
-        "phosphorus",
-        "potassium"
-    )
+    @validator("nitrogen", "phosphorus", "potassium")
     def validate_finite_values(cls, value):
-
         if not math.isfinite(value):
-
-            raise ValueError(
-                "Nutrient values must be finite numbers."
-            )
-
+            raise ValueError("Nutrient values must be finite numbers.")
         return value
 
     @validator("crop_name")
     def validate_crop_name(cls, value):
-
         value = value.strip()
-
         if not value:
-
-            raise ValueError(
-                "Crop name cannot be empty."
-            )
-
+            raise ValueError("Crop name cannot be empty.")
         return value
 
 
@@ -799,390 +808,121 @@ class FertilizerRequest(BaseModel):
 
 @router.post("/fertilizer-recommendation")
 def recommend_fertilizer(data: FertilizerRequest):
+    """Predict fertilizer using the saved Fertilizer.pkl model."""
 
-    # --------------------------------------------------------
-    # 1. Check dataset availability
-    # --------------------------------------------------------
-
-    if fertilizer_data is None:
-
+    if fertilizer_model is None:
         raise HTTPException(
             status_code=503,
-            detail="Fertilizer dataset could not be loaded."
+            detail=f"Fertilizer model unavailable: {fertilizer_model_error or 'Model loading failed.'}"
+        )
+
+    if fertilizer_data is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Fertilizer dataset unavailable for crop/range checks: {fertilizer_data_error}"
         )
 
     try:
+        crop_name = data.crop_name.strip()
+        normalized_crop = crop_name.lower()
+        aliases = {"rice": "paddy", "corn": "maize"}
+        normalized_crop = aliases.get(normalized_crop, normalized_crop)
 
-        required_columns = {
-            "Crop",
-            "N",
-            "P",
-            "K"
-        }
-
-        if not required_columns.issubset(
-            fertilizer_data.columns
-        ):
-
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    "Fertilizer dataset must contain "
-                    "Crop, N, P and K columns."
-                )
-            )
-
-        # ----------------------------------------------------
-        # 2. Find crop reference values
-        # ----------------------------------------------------
-
-        crop_data = fertilizer_data[
-            fertilizer_data["Crop"]
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            == data.crop_name.lower()
-        ]
-
-        if crop_data.empty:
-
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"No fertilizer data found for crop: "
-                    f"{data.crop_name}"
-                )
-            )
-
-        # ----------------------------------------------------
-        # 3. Handle duplicate crop entries
-        # ----------------------------------------------------
-
-        if len(crop_data) > 1:
-
-            crop_data = crop_data[
-                ["N", "P", "K"]
-            ].drop_duplicates()
-
-            if len(crop_data) > 1:
-
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Multiple different fertilizer "
-                        "reference records exist for this crop."
-                    )
-                )
-
-        # ----------------------------------------------------
-        # 4. Extract reference values
-        # ----------------------------------------------------
-
-        required_n = float(
-            crop_data["N"].iloc[0]
-        )
-
-        required_p = float(
-            crop_data["P"].iloc[0]
-        )
-
-        required_k = float(
-            crop_data["K"].iloc[0]
-        )
-
-        reference_values = {
-            "N": required_n,
-            "P": required_p,
-            "K": required_k
-        }
-
-        soil_values = {
+        input_npk = {
             "N": float(data.nitrogen),
             "P": float(data.phosphorus),
             "K": float(data.potassium)
         }
 
-        # ----------------------------------------------------
-        # 5. Validate reference values
-        # ----------------------------------------------------
+        known_crops = set(fertilizer_data["Crop"].str.lower().unique())
+        crop_is_known = normalized_crop in known_crops
 
-        for nutrient, value in reference_values.items():
+        sample = pd.DataFrame([{
+            "Crop": normalized_crop,
+            "N": input_npk["N"],
+            "P": input_npk["P"],
+            "K": input_npk["K"]
+        }], columns=["Crop", "N", "P", "K"])
 
-            if not is_finite_number(value):
+        prediction = fertilizer_model.predict(sample)[0]
+        probabilities = fertilizer_model.predict_proba(sample)[0]
+        classifier = fertilizer_model.named_steps.get("classifier")
+        if classifier is None or not hasattr(classifier, "classes_"):
+            raise RuntimeError("Saved fertilizer pipeline has no fitted classifier classes.")
+        classes = classifier.classes_
 
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Invalid reference value for "
-                        f"nutrient {nutrient}."
-                    )
+        ranked = sorted(
+            zip(classes, probabilities),
+            key=lambda item: float(item[1]),
+            reverse=True
+        )
+        confidence = float(max(probabilities))
+        alternatives = [
+            str(label) for label, probability in ranked
+            if str(label) != str(prediction)
+        ][:2]
+
+        out_of_range = []
+        for nutrient, value in input_npk.items():
+            minimum = float(fertilizer_data[nutrient].min())
+            maximum = float(fertilizer_data[nutrient].max())
+            if value < minimum or value > maximum:
+                out_of_range.append(
+                    f"{nutrient}={value:g} is outside the dataset range ({minimum:g}-{maximum:g})"
                 )
 
-            if value < 0:
-
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Negative reference value found "
-                        f"for nutrient {nutrient}."
-                    )
-                )
-
-        # ----------------------------------------------------
-        # 6. Analyze each nutrient
-        # ----------------------------------------------------
-
-        TOLERANCE_PERCENT = 10
-
-        nutrient_analysis = {}
-
-        nutrient_recommendations = []
-
-        for nutrient in ["N", "P", "K"]:
-
-            reference = reference_values[nutrient]
-
-            soil_value = soil_values[nutrient]
-
-            difference = reference - soil_value
-
-            # ------------------------------------------------
-            # Percentage difference
-            # ------------------------------------------------
-
-            if reference != 0:
-
-                difference_percent = (
-                    (soil_value - reference)
-                    / reference
-                ) * 100
-
-            else:
-
-                # Percentage difference is mathematically
-                # undefined when reference value is zero.
-
-                difference_percent = None
-
-            # ------------------------------------------------
-            # Determine nutrient status
-            # ------------------------------------------------
-
-            if reference == 0:
-
-                if soil_value == 0:
-
-                    status = "within_reference"
-
-                    recommendation_key = None
-
-                else:
-
-                    status = "above_reference"
-
-                    recommendation_key = (
-                        "NHigh" if nutrient == "N"
-                        else "PHigh" if nutrient == "P"
-                        else "KHigh"
-                    )
-
-            elif difference_percent < -TOLERANCE_PERCENT:
-
-                status = "below_reference"
-
-                recommendation_key = (
-                    "Nlow" if nutrient == "N"
-                    else "Plow" if nutrient == "P"
-                    else "Klow"
-                )
-
-            elif difference_percent > TOLERANCE_PERCENT:
-
-                status = "above_reference"
-
-                recommendation_key = (
-                    "NHigh" if nutrient == "N"
-                    else "PHigh" if nutrient == "P"
-                    else "KHigh"
-                )
-
-            else:
-
-                status = "within_reference"
-
-                recommendation_key = None
-
-            # ------------------------------------------------
-            # Recommendation text
-            # ------------------------------------------------
-
-            if recommendation_key:
-
-                recommendation_text = fertilizer_dic.get(
-                    recommendation_key,
-                    "No recommendation available."
-                )
-
-                nutrient_recommendations.append({
-
-                    "nutrient": nutrient,
-
-                    "status": status,
-
-                    "recommendation_key": (
-                        recommendation_key
-                    ),
-
-                    "recommendation": str(
-                        recommendation_text
-                    )
-                })
-
-            else:
-
-                recommendation_text = (
-                    "The supplied value is within the "
-                    "initial reference tolerance. "
-                    "Avoid making adjustments without "
-                    "a soil test."
-                )
-
-            # ------------------------------------------------
-            # Store nutrient analysis
-            # ------------------------------------------------
-
-            nutrient_analysis[nutrient] = {
-
-                "reference_value": reference,
-
-                "soil_value": soil_value,
-
-                "difference": round(
-                    difference,
-                    2
-                ),
-
-                "percentage_difference": (
-                    round(difference_percent, 2)
-                    if difference_percent is not None
-                    else None
-                ),
-
-                "status": status,
-
-                "recommendation": (
-                    recommendation_text
-                )
-            }
-
-        # ----------------------------------------------------
-        # 7. Determine largest relative deviation
-        # ----------------------------------------------------
-
-        nutrients_with_percentages = [
-            nutrient
-            for nutrient in nutrient_analysis
-            if nutrient_analysis[nutrient][
-                "percentage_difference"
-            ] is not None
-        ]
-
-        if nutrients_with_percentages:
-
-            largest_deviation_nutrient = max(
-                nutrients_with_percentages,
-                key=lambda nutrient: abs(
-                    nutrient_analysis[nutrient][
-                        "percentage_difference"
-                    ]
-                )
+        if crop_is_known:
+            reason = (
+                "Predicted by the trained fertilizer classification model "
+                "using crop and NPK inputs."
+            )
+        else:
+            reason = (
+                "This crop was not present in the training data. "
+                "The model uses its unseen-crop handling and NPK values; "
+                "reliability may be lower."
             )
 
-        else:
+        # Low-confidence warning
+        if confidence < 0.40:
+            reason += (
+                " Warning: The model has low confidence in this prediction. "
+                "Please verify it using soil testing or local agricultural guidance."
+            )
 
-            largest_deviation_nutrient = None
-
-        # ----------------------------------------------------
-        # 8. Generate summary
-        # ----------------------------------------------------
-
-        below_reference = [
-            nutrient
-            for nutrient, analysis
-            in nutrient_analysis.items()
-            if analysis["status"] == "below_reference"
-        ]
-
-        above_reference = [
-            nutrient
-            for nutrient, analysis
-            in nutrient_analysis.items()
-            if analysis["status"] == "above_reference"
-        ]
-
-        within_reference = [
-            nutrient
-            for nutrient, analysis
-            in nutrient_analysis.items()
-            if analysis["status"] == "within_reference"
-        ]
-
-        # ----------------------------------------------------
-        # 9. Return response
-        # ----------------------------------------------------
+        # Nutrient values outside the training dataset range
+        if out_of_range:
+            reason += " Warning: " + "; ".join(out_of_range) + (
+                ". Prediction may be unreliable outside the training-data range."
+            )
 
         return {
-
             "success": True,
-
-            "crop": data.crop_name,
-
-            "reference_type": (
-                "Dataset crop reference values. "
-                "These are not a substitute for "
-                "a laboratory soil test or "
-                "region-specific fertilizer prescription."
-            ),
-
-            "nutrient_analysis": nutrient_analysis,
-
-            "summary": {
-
-                "below_reference": below_reference,
-
-                "above_reference": above_reference,
-
-                "within_reference": within_reference,
-
-                "largest_relative_deviation": (
-                    largest_deviation_nutrient
-                )
-            },
-
-            "recommendations": (
-                nutrient_recommendations
-            ),
-
-            "tolerance_percent": (
-                TOLERANCE_PERCENT
+            "crop": crop_name,
+            "input_npk": input_npk,
+            "recommended_fertilizer": str(prediction),
+            "alternative_fertilizers": alternatives,
+            "reason": reason,
+            "confidence": round(confidence, 4),
+            "crop_seen_in_training": crop_is_known,
+            "out_of_training_range": bool(out_of_range),
+            "model_evaluation": fertilizer_model_metrics,
+            "nutrient_analysis": {},
+            "recommendations": [
+                {"fertilizer_name": str(prediction), "reason": reason}
+            ],
+            "note": (
+                "This is a prototype ML prediction trained on a synthetic dataset. "
+                "It is not a validated agricultural recommendation. Consult soil testing "
+                "and local agricultural guidance before applying fertilizer."
             )
         }
 
-    # --------------------------------------------------------
-    # 10. Error handling
-    # --------------------------------------------------------
-
     except HTTPException:
-
         raise
-
     except Exception as e:
-
-        print(
-            f"Fertilizer recommendation error: {e}"
-        )
-
+        print(f"Fertilizer model prediction error: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Fertilizer recommendation failed."
+            detail=f"Fertilizer prediction failed: {str(e)}"
         )
